@@ -4,6 +4,150 @@ import path from "path";
 import { fileURLToPath } from "url";
 import ytdl from "@distube/ytdl-core";
 import cors from "cors";
+import axios from "axios";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Platform detection function
+function detectPlatform(url: string): 'youtube' | 'facebook' | 'instagram' | 'tiktok' | 'unknown' {
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    return 'youtube';
+  }
+  if (url.includes('facebook.com') || url.includes('fb.watch')) {
+    return 'facebook';
+  }
+  if (url.includes('instagram.com')) {
+    return 'instagram';
+  }
+  if (url.includes('tiktok.com')) {
+    return 'tiktok';
+  }
+  return 'unknown';
+}
+
+// YouTube handlers
+async function handleYouTubeInfo(videoUrl: string, res: any) {
+  if (!ytdl.validateURL(videoUrl)) {
+    return res.status(400).json({ error: "Invalid YouTube URL" });
+  }
+
+  const info = await ytdl.getInfo(videoUrl, {
+    requestOptions: {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      }
+    }
+  });
+  const formats = info.formats.filter(f => f.hasVideo && f.hasAudio);
+  
+  const details = {
+    title: info.videoDetails.title,
+    thumbnail: info.videoDetails.thumbnails[info.videoDetails.thumbnails.length - 1].url,
+    duration: info.videoDetails.lengthSeconds,
+    author: info.videoDetails.author.name,
+    platform: 'youtube',
+    formats: formats.map(f => ({
+      quality: f.qualityLabel,
+      container: f.container,
+      url: f.url,
+      hasVideo: f.hasVideo,
+      hasAudio: f.hasAudio,
+      size: f.contentLength
+    }))
+  };
+
+  res.json(details);
+}
+
+async function handleYouTubeDownload(videoUrl: string, itag: string, res: any) {
+  const info = await ytdl.getInfo(videoUrl, {
+    requestOptions: {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      }
+    }
+  });
+  const title = info.videoDetails.title.replace(/[^\w\s]/gi, '');
+  
+  res.header('Content-Disposition', `attachment; filename="${title}.mp4"`);
+  ytdl(videoUrl, {
+    quality: itag || 'highest'
+  }).pipe(res);
+}
+
+// Facebook handlers (basic implementation - would need proper Facebook downloader library)
+async function handleFacebookInfo(videoUrl: string, res: any) {
+  // For now, return basic info - in production, would use facebook-video-downloader or similar
+  res.json({
+    title: "Facebook Video",
+    thumbnail: "",
+    duration: 0,
+    author: "Facebook User",
+    platform: 'facebook',
+    formats: [{
+      quality: "HD",
+      container: "mp4",
+      url: videoUrl,
+      hasVideo: true,
+      hasAudio: true,
+      size: "Unknown"
+    }],
+    note: "Facebook download requires additional setup"
+  });
+}
+
+async function handleFacebookDownload(videoUrl: string, res: any) {
+  res.status(501).send("Facebook download not yet implemented");
+}
+
+// Instagram handlers (basic implementation)
+async function handleInstagramInfo(videoUrl: string, res: any) {
+  res.json({
+    title: "Instagram Video",
+    thumbnail: "",
+    duration: 0,
+    author: "Instagram User",
+    platform: 'instagram',
+    formats: [{
+      quality: "HD",
+      container: "mp4",
+      url: videoUrl,
+      hasVideo: true,
+      hasAudio: true,
+      size: "Unknown"
+    }],
+    note: "Instagram download requires additional setup"
+  });
+}
+
+async function handleInstagramDownload(videoUrl: string, res: any) {
+  res.status(501).send("Instagram download not yet implemented");
+}
+
+// TikTok handlers (basic implementation)
+async function handleTikTokInfo(videoUrl: string, res: any) {
+  res.json({
+    title: "TikTok Video",
+    thumbnail: "",
+    duration: 0,
+    author: "TikTok User",
+    platform: 'tiktok',
+    formats: [{
+      quality: "HD",
+      container: "mp4",
+      url: videoUrl,
+      hasVideo: true,
+      hasAudio: true,
+      size: "Unknown"
+    }],
+    note: "TikTok download requires additional setup"
+  });
+}
+
+async function handleTikTokDownload(videoUrl: string, res: any) {
+  res.status(501).send("TikTok download not yet implemented");
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,35 +178,21 @@ async function startServer() {
     }
 
     try {
-      if (!ytdl.validateURL(videoUrl)) {
-        return res.status(400).json({ error: "Invalid YouTube URL" });
-      }
-
-      const info = await ytdl.getInfo(videoUrl, {
-        requestOptions: {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          }
-        }
-      });
-      const formats = info.formats.filter(f => f.hasVideo && f.hasAudio);
+      // Detect platform
+      const platform = detectPlatform(videoUrl);
       
-      const details = {
-        title: info.videoDetails.title,
-        thumbnail: info.videoDetails.thumbnails[info.videoDetails.thumbnails.length - 1].url,
-        duration: info.videoDetails.lengthSeconds,
-        author: info.videoDetails.author.name,
-        formats: formats.map(f => ({
-          quality: f.qualityLabel,
-          container: f.container,
-          url: f.url,
-          hasVideo: f.hasVideo,
-          hasAudio: f.hasAudio,
-          size: f.contentLength
-        }))
-      };
-
-      res.json(details);
+      switch (platform) {
+        case 'youtube':
+          return await handleYouTubeInfo(videoUrl, res);
+        case 'facebook':
+          return await handleFacebookInfo(videoUrl, res);
+        case 'instagram':
+          return await handleInstagramInfo(videoUrl, res);
+        case 'tiktok':
+          return await handleTikTokInfo(videoUrl, res);
+        default:
+          return res.status(400).json({ error: "Unsupported platform. Currently supported: YouTube, Facebook, Instagram, TikTok" });
+      }
     } catch (error: any) {
       console.error("Error fetching video info:", error);
       const message = error.message || "Failed to fetch video information";
@@ -79,19 +209,20 @@ async function startServer() {
     }
 
     try {
-      const info = await ytdl.getInfo(videoUrl, {
-        requestOptions: {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          }
-        }
-      });
-      const title = info.videoDetails.title.replace(/[^\w\s]/gi, '');
+      const platform = detectPlatform(videoUrl);
       
-      res.header('Content-Disposition', `attachment; filename="${title}.mp4"`);
-      ytdl(videoUrl, {
-        quality: itag || 'highest'
-      }).pipe(res);
+      switch (platform) {
+        case 'youtube':
+          return await handleYouTubeDownload(videoUrl, itag, res);
+        case 'facebook':
+          return await handleFacebookDownload(videoUrl, res);
+        case 'instagram':
+          return await handleInstagramDownload(videoUrl, res);
+        case 'tiktok':
+          return await handleTikTokDownload(videoUrl, res);
+        default:
+          return res.status(400).send("Unsupported platform");
+      }
     } catch (error) {
       console.error("Error downloading video:", error);
       res.status(500).send("Failed to download video");

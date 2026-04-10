@@ -33,7 +33,28 @@ import {
   Play,
   Youtube,
   Globe,
-  Info
+  Info,
+  MoreVertical,
+  Share2,
+  Edit3,
+  FileIcon,
+  ImageIcon,
+  VideoIcon,
+  Music,
+  FileType,
+  Facebook,
+  Instagram,
+  MessageCircle,
+  ChevronDown,
+  ChevronUp,
+  Maximize2,
+  Minimize2,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+  Save,
+  Copy,
+  ExternalLink
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -48,7 +69,7 @@ import { convertMedia, convertImage, convertDoc, type ConversionSettings } from 
 import { cn } from '@/lib/utils';
 
 type FileStatus = 'idle' | 'converting' | 'completed' | 'error';
-type View = 'downloader' | 'converter' | 'history' | 'formats' | 'viewer';
+type View = 'downloader' | 'converter' | 'history' | 'formats' | 'viewer' | 'pdf-viewer' | 'image-viewer' | 'document-viewer' | 'editor';
 
 interface VideoFormat {
   quality: string;
@@ -66,6 +87,7 @@ interface VideoInfo {
   duration: string;
   author: string;
   formats: VideoFormat[];
+  platform?: 'youtube' | 'facebook' | 'instagram' | 'tiktok' | 'other';
 }
 
 interface FileItem {
@@ -79,6 +101,9 @@ interface FileItem {
   settings: ConversionSettings;
   resultBlob?: Blob;
   error?: string;
+  preview?: string;
+  availableFormats?: string[];
+  detectedType?: string;
 }
 
 interface HistoryItem {
@@ -92,20 +117,85 @@ interface HistoryItem {
   type?: 'video' | 'image' | 'pdf' | 'audio' | 'other';
   source: 'download' | 'conversion';
   thumbnail?: string;
+  platform?: string;
+}
+
+interface ViewerData {
+  url: string;
+  type: string;
+  name: string;
+  file?: File;
+  blob?: Blob;
+  historyItem?: HistoryItem;
 }
 
 const SUPPORTED_FORMATS = {
-  video: ['mp4', 'webm', 'mov', 'avi'],
-  audio: ['mp3', 'wav', 'ogg'],
-  image: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
-  doc: ['docx', 'txt', 'pdf']
+  video: ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv', '3gp', 'm4v', 'mpg', 'mpeg'],
+  audio: ['mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a', 'wma', 'aiff', 'opus'],
+  image: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff', 'svg', 'ico', 'heic', 'heif'],
+  document: ['docx', 'doc', 'pdf', 'txt', 'rtf', 'odt', 'xls', 'xlsx', 'ppt', 'pptx', 'csv'],
+  archive: ['zip', 'rar', '7z', 'tar', 'gz']
 };
 
 const TARGET_FORMATS = {
-  video: ['mp4', 'avi', 'mov'],
-  audio: ['mp3', 'wav'],
-  image: ['png', 'jpg', 'webp'],
-  doc: ['pdf', 'docx', 'txt']
+  video: ['mp4', 'avi', 'mov', 'webm', 'mkv', 'flv'],
+  audio: ['mp3', 'wav', 'ogg', 'aac', 'flac'],
+  image: ['png', 'jpg', 'webp', 'gif', 'bmp', 'tiff'],
+  document: ['pdf', 'docx', 'txt', 'rtf', 'odt'],
+  archive: ['zip', '7z']
+};
+
+// Smart format detection and conversion suggestions
+const FORMAT_SUGGESTIONS = {
+  // Video formats
+  'mp4': { category: 'video', targets: ['avi', 'mov', 'webm', 'mkv', 'gif'] },
+  'webm': { category: 'video', targets: ['mp4', 'avi', 'mov', 'mkv'] },
+  'mov': { category: 'video', targets: ['mp4', 'avi', 'webm', 'mkv'] },
+  'avi': { category: 'video', targets: ['mp4', 'mov', 'webm', 'mkv'] },
+  'mkv': { category: 'video', targets: ['mp4', 'avi', 'mov', 'webm'] },
+  'flv': { category: 'video', targets: ['mp4', 'avi', 'mov', 'webm'] },
+  'wmv': { category: 'video', targets: ['mp4', 'avi', 'mov'] },
+  '3gp': { category: 'video', targets: ['mp4', 'avi', 'mov'] },
+  'm4v': { category: 'video', targets: ['mp4', 'avi', 'mov'] },
+  'mpg': { category: 'video', targets: ['mp4', 'avi', 'mov'] },
+  'mpeg': { category: 'video', targets: ['mp4', 'avi', 'mov'] },
+
+  // Audio formats
+  'mp3': { category: 'audio', targets: ['wav', 'ogg', 'aac', 'flac'] },
+  'wav': { category: 'audio', targets: ['mp3', 'ogg', 'aac', 'flac'] },
+  'ogg': { category: 'audio', targets: ['mp3', 'wav', 'aac', 'flac'] },
+  'aac': { category: 'audio', targets: ['mp3', 'wav', 'ogg', 'flac'] },
+  'flac': { category: 'audio', targets: ['mp3', 'wav', 'ogg', 'aac'] },
+  'm4a': { category: 'audio', targets: ['mp3', 'wav', 'ogg', 'flac'] },
+  'wma': { category: 'audio', targets: ['mp3', 'wav', 'ogg'] },
+  'aiff': { category: 'audio', targets: ['mp3', 'wav', 'ogg', 'flac'] },
+  'opus': { category: 'audio', targets: ['mp3', 'wav', 'ogg', 'flac'] },
+
+  // Image formats
+  'png': { category: 'image', targets: ['jpg', 'webp', 'gif', 'bmp', 'tiff'] },
+  'jpg': { category: 'image', targets: ['png', 'webp', 'gif', 'bmp', 'tiff'] },
+  'jpeg': { category: 'image', targets: ['png', 'webp', 'gif', 'bmp', 'tiff'] },
+  'webp': { category: 'image', targets: ['png', 'jpg', 'gif', 'bmp', 'tiff'] },
+  'gif': { category: 'image', targets: ['png', 'jpg', 'webp', 'bmp'] },
+  'bmp': { category: 'image', targets: ['png', 'jpg', 'webp', 'tiff'] },
+  'tiff': { category: 'image', targets: ['png', 'jpg', 'webp', 'bmp'] },
+  'svg': { category: 'image', targets: ['png', 'jpg', 'webp'] },
+  'ico': { category: 'image', targets: ['png', 'jpg', 'webp'] },
+  'heic': { category: 'image', targets: ['png', 'jpg', 'webp', 'tiff'] },
+  'heif': { category: 'image', targets: ['png', 'jpg', 'webp', 'tiff'] },
+
+  // Document formats
+  'docx': { category: 'document', targets: ['pdf', 'txt', 'rtf', 'odt'] },
+  'doc': { category: 'document', targets: ['pdf', 'docx', 'txt', 'rtf'] },
+  'pdf': { category: 'document', targets: ['docx', 'txt', 'rtf', 'odt'] },
+  'txt': { category: 'document', targets: ['pdf', 'docx', 'rtf', 'odt'] },
+  'rtf': { category: 'document', targets: ['pdf', 'docx', 'txt', 'odt'] },
+  'odt': { category: 'document', targets: ['pdf', 'docx', 'txt', 'rtf'] },
+  'xls': { category: 'document', targets: ['xlsx', 'csv', 'pdf'] },
+  'xlsx': { category: 'document', targets: ['xls', 'csv', 'pdf'] },
+  'ppt': { category: 'document', targets: ['pptx', 'pdf'] },
+  'pptx': { category: 'document', targets: ['ppt', 'pdf'] },
+  'csv': { category: 'document', targets: ['xlsx', 'xls', 'pdf'] }
 };
 
 import { 
@@ -436,7 +526,7 @@ function VideoDownloader() {
           Download Videos. <br /> Instantly.
         </h1>
         <p className="text-lg text-white/50 max-w-2xl mx-auto leading-relaxed text-sm uppercase tracking-widest">
-          Paste a YouTube URL below to get started. All videos are downloaded directly to your device.
+          Paste a video URL from YouTube, Facebook, Instagram, or TikTok below to get started.
         </p>
       </div>
 
@@ -450,7 +540,7 @@ function VideoDownloader() {
               <LinkIcon className="w-5 h-5 text-white/20 group-focus-within:text-blue-500 transition-colors" />
             </div>
             <Input
-              placeholder="Paste YouTube URL here..."
+              placeholder="Paste video URL from YouTube, Facebook, Instagram, or TikTok..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               className="pl-12 h-14 bg-white/5 border-white/10 focus:border-blue-500 rounded-full text-lg transition-all font-mono"
@@ -491,18 +581,27 @@ function VideoDownloader() {
                   <div className="flex-1 min-w-0 space-y-2">
                     <h3 className="text-xl font-bold truncate leading-tight">{videoInfo.title}</h3>
                     <p className="text-white/40 text-sm flex items-center gap-2">
-                      <Youtube className="w-4 h-4 text-red-500" />
+                      {videoInfo.platform === 'youtube' && <Youtube className="w-4 h-4 text-red-500" />}
+                      {videoInfo.platform === 'facebook' && <Facebook className="w-4 h-4 text-blue-600" />}
+                      {videoInfo.platform === 'instagram' && <Instagram className="w-4 h-4 text-pink-500" />}
+                      {videoInfo.platform === 'tiktok' && <Music className="w-4 h-4 text-black" />}
                       {videoInfo.author}
                     </p>
                     <div className="flex flex-wrap gap-2 pt-2">
-                      <Badge variant="secondary" className="bg-white/5 text-white/60 border-white/5">
+                      <Badge variant="secondary" className="bg-white/5 text-white/60 border-white/5 capitalize">
                         <Globe className="w-3 h-3 mr-1" />
-                        YouTube
+                        {videoInfo.platform || 'Unknown'}
                       </Badge>
                       <Badge variant="secondary" className="bg-white/5 text-white/60 border-white/5">
                         <Info className="w-3 h-3 mr-1" />
                         MP4
                       </Badge>
+                      {videoInfo.note && (
+                        <Badge variant="secondary" className="bg-yellow-500/10 text-yellow-400 border-yellow-500/20">
+                          <AlertTriangle className="w-3 h-3 mr-1" />
+                          Limited Support
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -651,7 +750,9 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [globalSuccess, setGlobalSuccess] = useState<string | null>(null);
-  const [viewerData, setViewerData] = useState<{ url: string, type: string, name: string } | null>(null);
+  const [viewerData, setViewerData] = useState<ViewerData | null>(null);
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState<HistoryItem | null>(null);
+  const [showHistoryMenu, setShowHistoryMenu] = useState(false);
   
   // Global Settings
   const [settings, setGlobalSettings] = useState(() => {
@@ -732,35 +833,80 @@ export default function App() {
 
   const uniqueFormats = Array.from(new Set(history.map(item => item.outputFormat))).sort() as string[];
 
-  const addFiles = useCallback((newFiles: FileList | File[]) => {
-    const items: FileItem[] = Array.from(newFiles).map(file => {
-      const type = file.type.split('/')[0];
+  const addFiles = useCallback(async (newFiles: FileList | File[]) => {
+    const items: FileItem[] = await Promise.all(Array.from(newFiles).map(async (file) => {
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
-      
+      const mimeType = file.type;
+
+      // Smart file type detection
+      let detectedType = 'other';
       let category: keyof typeof TARGET_FORMATS = 'image';
-      if (SUPPORTED_FORMATS.video.includes(ext) || file.type.startsWith('video/')) category = 'video';
-      else if (SUPPORTED_FORMATS.audio.includes(ext) || file.type.startsWith('audio/')) category = 'audio';
-      else if (SUPPORTED_FORMATS.doc.includes(ext) || file.type.includes('word') || file.type.includes('text')) category = 'doc';
+      let availableFormats: string[] = [];
+
+      // Check by extension first, then by MIME type
+      if (SUPPORTED_FORMATS.video.includes(ext) || mimeType.startsWith('video/')) {
+        detectedType = 'video';
+        category = 'video';
+        availableFormats = FORMAT_SUGGESTIONS[ext]?.targets || TARGET_FORMATS.video;
+      } else if (SUPPORTED_FORMATS.audio.includes(ext) || mimeType.startsWith('audio/')) {
+        detectedType = 'audio';
+        category = 'audio';
+        availableFormats = FORMAT_SUGGESTIONS[ext]?.targets || TARGET_FORMATS.audio;
+      } else if (SUPPORTED_FORMATS.image.includes(ext) || mimeType.startsWith('image/')) {
+        detectedType = 'image';
+        category = 'image';
+        availableFormats = FORMAT_SUGGESTIONS[ext]?.targets || TARGET_FORMATS.image;
+      } else if (SUPPORTED_FORMATS.document.includes(ext) ||
+                 mimeType.includes('word') ||
+                 mimeType.includes('text') ||
+                 mimeType.includes('pdf') ||
+                 mimeType.includes('spreadsheet') ||
+                 mimeType.includes('presentation')) {
+        detectedType = 'document';
+        category = 'document';
+        availableFormats = FORMAT_SUGGESTIONS[ext]?.targets || TARGET_FORMATS.document;
+      } else if (SUPPORTED_FORMATS.archive.includes(ext)) {
+        detectedType = 'archive';
+        category = 'archive';
+        availableFormats = TARGET_FORMATS.archive;
+      }
 
       const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
+
+      // Generate preview for images and PDFs
+      let preview: string | undefined;
+      if (detectedType === 'image' && mimeType.startsWith('image/')) {
+        preview = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.readAsDataURL(file);
+        });
+      } else if (detectedType === 'document' && ext === 'pdf') {
+        // For PDFs, we'll generate a preview later when viewing
+        preview = 'pdf-preview';
+      }
 
       return {
         id: Math.random().toString(36).substring(7),
         file,
         status: 'idle',
         progress: 0,
-        outputFormat: TARGET_FORMATS[category][0],
+        outputFormat: availableFormats[0] || TARGET_FORMATS[category]?.[0] || ext,
         customFileName: nameWithoutExt,
         category,
+        detectedType,
+        availableFormats,
+        preview,
         settings: {
           quality: 80,
           bitrate: '128k',
           resolution: 'original'
         }
-      } as any;
-    });
+      } as FileItem;
+    }));
 
-    setFiles(prev => [...prev, ...items]);
+    // Add new files to the top
+    setFiles(prev => [...items, ...prev]);
   }, []);
 
   const onDrop = (e: React.DragEvent) => {
@@ -1242,8 +1388,11 @@ export default function App() {
                               className="bg-white/5 rounded-2xl border border-white/5 p-3 md:p-4 flex flex-col md:flex-row items-center gap-4 md:gap-6"
                             >
                               <div className="flex items-center gap-3 md:gap-4 w-full md:w-auto flex-1 min-w-0">
-                                <div className="shrink-0">
+                                <div className="shrink-0 relative">
                                   {getFileIcon(item.file.name, (item as any).category)}
+                                  {(item as any).preview && (item as any).preview !== 'pdf-preview' && (
+                                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-white/20"></div>
+                                  )}
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   {item.status === 'idle' ? (
@@ -1266,6 +1415,11 @@ export default function App() {
                                   <p className="text-[10px] text-white/40 uppercase tracking-wider font-mono mt-0.5 truncate">
                                     {(item.file.size / (1024 * 1024)).toFixed(2)} MB • {item.file.name}
                                   </p>
+                                  {(item as any).detectedType && (
+                                    <p className="text-[9px] text-purple-400/60 uppercase tracking-wider font-mono mt-0.5">
+                                      Detected: {(item as any).detectedType}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
 
@@ -1278,7 +1432,9 @@ export default function App() {
                                     disabled={item.status !== 'idle'}
                                     className="bg-transparent text-xs font-bold focus:outline-none cursor-pointer pr-1"
                                   >
-                                    {TARGET_FORMATS[(item as any).category as keyof typeof TARGET_FORMATS].map(fmt => (
+                                    {(item as any).availableFormats?.map((fmt: string) => (
+                                      <option key={fmt} value={fmt} className="bg-[#1a1a1a]">{fmt.toUpperCase()}</option>
+                                    )) || TARGET_FORMATS[(item as any).category as keyof typeof TARGET_FORMATS].map(fmt => (
                                       <option key={fmt} value={fmt} className="bg-[#1a1a1a]">{fmt.toUpperCase()}</option>
                                     ))}
                                   </select>
@@ -1335,16 +1491,75 @@ export default function App() {
                                     </div>
                                   )}
                                   
-                                  <motion.div whileTap={{ scale: 0.9 }}>
-                                    <Button 
-                                      size="icon" 
-                                      variant="ghost" 
-                                      className="text-white/20 hover:text-white/60 h-8 w-8 rounded-full"
-                                      onClick={() => removeFile(item.id)}
-                                    >
-                                      <X className="w-4 h-4" />
-                                    </Button>
-                                  </motion.div>
+                                  {/* Three-dot menu */}
+                                  <div className="relative">
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <motion.div whileTap={{ scale: 0.9 }}>
+                                          <Button 
+                                            size="icon" 
+                                            variant="ghost" 
+                                            className="text-white/20 hover:text-white/60 h-8 w-8 rounded-full"
+                                          >
+                                            <MoreVertical className="w-4 h-4" />
+                                          </Button>
+                                        </motion.div>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent className="w-48 bg-black/90 border-white/10">
+                                        <DropdownMenuItem 
+                                          className="text-white/80 hover:bg-white/10 cursor-pointer"
+                                          onClick={() => {
+                                            // Open viewer for supported types
+                                            if ((item as any).detectedType === 'image' || (item as any).detectedType === 'document') {
+                                              setViewerData({
+                                                file: item.file,
+                                                type: (item as any).detectedType,
+                                                preview: (item as any).preview
+                                              });
+                                              setCurrentView('viewer');
+                                            }
+                                          }}
+                                        >
+                                          <Eye className="w-4 h-4 mr-2" />
+                                          View File
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem 
+                                          className="text-white/80 hover:bg-white/10 cursor-pointer"
+                                          onClick={() => {
+                                            // Share functionality
+                                            if (navigator.share && item.status === 'completed') {
+                                              navigator.share({
+                                                title: item.customFileName,
+                                                files: [item.outputBlob as File]
+                                              });
+                                            }
+                                          }}
+                                        >
+                                          <Share2 className="w-4 h-4 mr-2" />
+                                          Share
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem 
+                                          className="text-white/80 hover:bg-white/10 cursor-pointer"
+                                          onClick={() => {
+                                            // Duplicate file
+                                            const duplicatedItem = { ...item, id: Math.random().toString(36).substring(7) };
+                                            setFiles(prev => [duplicatedItem, ...prev]);
+                                          }}
+                                        >
+                                          <Copy className="w-4 h-4 mr-2" />
+                                          Duplicate
+                                        </DropdownMenuItem>
+                                        <DropdownMenuSeparator className="bg-white/10" />
+                                        <DropdownMenuItem 
+                                          className="text-red-400 hover:bg-red-500/10 cursor-pointer"
+                                          onClick={() => removeFile(item.id)}
+                                        >
+                                          <Trash2 className="w-4 h-4 mr-2" />
+                                          Remove
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
                                 </div>
                               </div>
                             </motion.div>
